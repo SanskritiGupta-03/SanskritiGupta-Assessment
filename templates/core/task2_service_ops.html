@@ -36,6 +36,13 @@
         </div>
 
         <div class="col-12 json-only">
+          <div class="col-md-3">
+            <label class="form-label">Load from Excel (.xlsx)</label>
+            <input id="t2-file" type="file" class="form-control" accept=".xlsx,.xls,.xlsm,.csv">
+            <div class="form-text">
+              Columns needed: date, capacity, occupied (ops_cost optional).
+            </div>
+          </div>
           <div class="row g-2">
             <div class="col-md-3">
               <label class="form-label">Date Field</label>
@@ -133,6 +140,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
   const modeSel = document.getElementById('t2-mode');
@@ -147,12 +155,14 @@
   const demoBtn= document.getElementById('t2-demo');
   const staffRatio = document.getElementById('t2-staff-ratio');
 
+  const t2FileInput = document.getElementById('t2-file');
+
   const jsonArea = document.getElementById('t2-json-area');
   const fDate = document.getElementById('t2-json-date');
   const fCap  = document.getElementById('t2-json-cap');
   const fOcc  = document.getElementById('t2-json-occ');
   const fCost = document.getElementById('t2-json-cost');
-
+  
   const kOcc = document.getElementById('t2-kpi-occ');
   const kPeak= document.getElementById('t2-kpi-peak');
   const kCost= document.getElementById('t2-kpi-cost-per');
@@ -162,6 +172,50 @@
   function destroyIf(c){ if (c) try{c.destroy()}catch{} }
   function fmt(n){ return (n||0).toLocaleString(); }
   function avg(arr){ return arr.length ? arr.reduce((a,b)=>a+(+b||0),0) / arr.length : 0; }
+
+  function autoSelect(selectEl, keys, candidates){
+    const norm = s => String(s).toLowerCase().replace(/\s+/g,'');
+    const keySet = keys.map(norm);
+    let pick = null;
+    for (const cand of candidates){
+      const i = keySet.indexOf(norm(cand));
+      if (i >= 0){ pick = keys[i]; break; }
+    }
+    selectEl.value = pick || (keys[0] || '');
+  }
+
+  async function handleExcelFile(file){
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:'array', cellDates:true, raw:false, dateNF:'yyyy-mm-dd' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) throw new Error('No sheets found');
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval:null });
+    if (!rows.length) throw new Error('Sheet has no data rows');
+
+    jsonArea.value = JSON.stringify(rows, null, 2);
+
+    const keys = Object.keys(rows[0] || {});
+    [fDate, fCap, fOcc, fCost].forEach(sel => {
+      sel.innerHTML = '';
+      keys.forEach(k => sel.appendChild(Object.assign(document.createElement('option'), {value:k, textContent:k})));
+    });
+
+    autoSelect(fDate, keys, ['date','day','business_date','period']);
+    autoSelect(fCap,  keys, ['capacity','cap','rooms_total']);
+    autoSelect(fOcc,  keys, ['occupied','occ','rooms_occupied']);
+    autoSelect(fCost, keys, ['ops_cost','cost','opex']);
+
+    modeSel.value = 'json';
+    modeSel.dispatchEvent(new Event('change'));
+  }
+
+  t2FileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { await handleExcelFile(file); }
+    catch(err){ console.error(err); alert('Could not read Excel file. See console for details.'); }
+  });
 
   function setModeUI(){
     const isAPI = modeSel.value === 'api';
@@ -307,7 +361,7 @@
 
 <script>
 (() => {
-  const runBtn   = document.getElementById('t2Run');          // your Task-2 run button id
+  const runBtn   = document.getElementById('t2Run');          
   const locEl    = document.getElementById('t2Location');
   const grpEl    = document.getElementById('t2Grp');
   const fromEl   = document.getElementById('t2From');
@@ -316,9 +370,8 @@
 
   const kOcc   = document.getElementById('kOccRate');
   const kPeak  = document.getElementById('kPeakOcc');
-  const kCost  = document.getElementById('kCostPerOcc');   // may be '—' if you don’t supply cost
-  const kStaff = document.getElementById('kStaffNext');    // next day suggestion already on page
-
+  const kCost  = document.getElementById('kCostPerOcc');   
+  const kStaff = document.getElementById('kStaffNext');    
   const n1 = document.getElementById('t2Next1');
   const n7 = document.getElementById('t2Next7');
   const n30 = document.getElementById('t2Next30');
@@ -342,7 +395,6 @@
     return `/api/trends/occupancy?${ls}grp=${grp}${d1}${d2}`;
   }
 
-  // Simple baseline forecast: 7-day moving average of occupied, extended forward
   function baselineForecast(series, horizonDays=180){
     const occ = series.map(r=> +r.occupied || 0);
     const labels = series.map(r=> ymd(r.period || r.date));
@@ -354,13 +406,11 @@
       return slice.length ? slice.reduce((a,b)=>a+b,0)/slice.length : 0;
     };
 
-    // compute last moving average and extend
     let lastMA = ma(7, occ.length-1) || (occ[occ.length-1] || 0);
     const forecast = [];
     for (let i=1;i<=horizonDays;i++){
       const d = new Date(lastDate); d.setDate(d.getDate()+i);
       forecast.push({ date: ymd(d), value: lastMA });
-      // optional: slowly revert to long-term mean
       lastMA = 0.7*lastMA + 0.3*(avg(occ) || lastMA);
     }
     return forecast;
@@ -372,7 +422,6 @@
     const occ = series.map(r => +r.occupied || 0);
     const rate = series.map((_,i) => cap[i] > 0 ? (occ[i]/cap[i]) : 0);
 
-    // KPIs
     if (kOcc)   kOcc.textContent  = (avg(rate)*100).toFixed(1)+'%';
     if (kPeak)  kPeak.textContent = fmt(Math.max(...occ));
     if (kCost)  kCost.textContent = '—'; // unless you add ops_cost series
@@ -381,16 +430,13 @@
       kStaff.textContent = Math.ceil((occ[occ.length-1] || 0) / ratio);
     }
 
-    // Forecast (client-side baseline)
     const fc = baselineForecast(series, 180);
 
-    // Forecast KPIs
     n1.textContent   = fmt(fc[0]?.value ?? null);
     n7.textContent   = fmt(sum(fc.slice(0,7).map(x=>x.value)));
     n30.textContent  = fmt(sum(fc.slice(0,30).map(x=>x.value)));
     n180.textContent = fmt(sum(fc.slice(0,180).map(x=>x.value)));
 
-    // Merge for chart
     const allDates = [
       ...labels,
       ...fc.map(x=>x.date)
@@ -430,7 +476,6 @@
   }
 
   runBtn?.addEventListener('click', ()=> run());
-  // run();
 })();
 </script>
 

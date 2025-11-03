@@ -1,7 +1,9 @@
 import os
+import random
+import math
 from django.shortcuts import render
 from collections import defaultdict
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum, Count
@@ -16,6 +18,60 @@ from .services.revenue_service import revenue_series, bookings_series, avg_reven
 from .services.cancellation_service import canc_noshow_series
 from .services.leadtime_service import leadtime_distribution
 from .services.forecast_service import arima_forecast_series
+
+
+def _demo_dates(count=90, step_days=1, start=None):
+    end = date.today()
+    if start is None:
+        start = end - timedelta(days=count*step_days)
+    d = start
+    out = []
+    while d <= end:
+        out.append(d)
+        d += timedelta(days=step_days)
+    return out
+
+def _demo_revenue_series(count=90, step_days=1):
+    dates = _demo_dates(count=count, step_days=step_days)
+    series = []
+    base_rev = 9000
+    base_bk = 30
+    for i, d in enumerate(dates):
+        rev = base_rev + 60*i + 800*math.sin(i/6.28) + random.randint(-400, 400)
+        bk  = base_bk  + 0.2*i +  3*math.sin(i/3.14) + random.randint(-2, 2)
+        rev = max(0, round(rev, 2))
+        bk  = max(0, int(bk))
+        series.append({
+            "period": d.strftime("%Y-%m-%d"),
+            "revenue": rev,
+            "bookings": bk,
+            "avg_rev_per_booking": round((rev / bk) if bk else 0.0, 2)
+        })
+    return series
+
+def _demo_booking_rate(count=90, step_days=1):
+    dates = _demo_dates(count=count, step_days=step_days)
+    series = []
+    for i, d in enumerate(dates):
+        bk = max(0, 25 + 2*math.sin(i/4.0) + random.randint(-2, 3))
+        series.append({"period": d.strftime("%Y-%m-%d"), "bookings": int(bk)})
+    weekday_avg = [round(20 + (i%2)*2, 2) for i in range(7)]
+    month_avg = [round(22 + (i%3), 2) for i in range(12)]
+    return {"series": series, "weekday_avg": weekday_avg, "month_avg": month_avg}
+
+def _demo_forecast_from_series(series, horizon=56):
+    history = [{"date": r["period"], "value": float(r.get("revenue") or 0)} for r in series]
+    if not history:
+        return {"history": [], "forecast": []}
+    last = datetime.fromisoformat(history[-1]["date"]).date()
+    last_val = history[-1]["value"]
+    forecast = []
+    for i in range(1, horizon+1):
+        d = last + timedelta(days=i)
+        last_val = 0.85*last_val + 0.15*(history[-1]["value"])
+        forecast.append({"date": d.strftime("%Y-%m-%d"), "value": round(last_val, 2)})
+    return {"history": history, "forecast": forecast}
+
 
 @require_GET
 def ft_summary(request):
@@ -86,6 +142,22 @@ def trends_occupancy(request):
     """
     GET /api/trends/occupancy?location_id=<id>&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&grp=day|week|month
     """
+    if request.GET.get("demo") == "1":
+        step = 7 if (request.GET.get("grp") or "week") == "week" else 1
+        dates = _demo_dates(count=60, step_days=step)
+        series = []
+        for i, d in enumerate(dates):
+            cap = 120
+            occ = int(60 + 35*math.sin(i/4.2) + random.randint(-8, 8) + 0.2*i)
+            occ = max(0, min(cap, occ))
+            series.append({
+                "period": d.strftime("%Y-%m-%d"),
+                "capacity": cap,
+                "occupied": occ,
+                "occupancy_rate": round(occ/cap, 4)
+            })
+        return JsonResponse({"series": series})
+    
     grp = group_param(request)
     d1, d2 = parse_dates(request)
     location_id = request.GET.get("location_id")
@@ -124,6 +196,11 @@ def trends_booking_rate(request):
     - Counts bookings by check-in date (arrival-based).
     - Returns series + weekday/month seasonality averages.
     """
+    if request.GET.get("demo") == "1":
+        step = 7 if (request.GET.get("grp") or "week") == "week" else 1
+        demo = _demo_booking_rate(count=90, step_days=step)
+        return JsonResponse(demo)
+    
     grp = group_param(request)
     d1, d2 = parse_dates(request)
 
@@ -175,6 +252,12 @@ def trends_revenue(request):
     - Uses FinancialTransaction.revenue_amt (fallback to net_amount).
     - Computes avg_rev_per_booking and (if available) per_customer.
     """
+
+    if request.GET.get("demo") == "1":
+        step = 7 if (request.GET.get("grp") or "week") == "week" else 1
+        series = _demo_revenue_series(count=90, step_days=step)
+        return JsonResponse({"series": series})
+    
     grp = group_param(request)
     d1, d2 = parse_dates(request)
     resort = request.GET.get("resort")
@@ -416,6 +499,11 @@ def forecast_revenue(request):
     GET /api/forecast/revenue?resort=XYZ&months=12&horizon=56
     Clean last N months and run a simple ARIMA forecast.
     """
+    if request.GET.get("demo") == "1":
+        series = _demo_revenue_series(count=120, step_days=1)
+        res = _demo_forecast_from_series(series, horizon=int(request.GET.get("horizon") or 56))
+        return JsonResponse(res)
+    
     resort = request.GET.get("resort")
     months = int(request.GET.get("months") or 12)
     horizon = int(request.GET.get("horizon") or 56)
