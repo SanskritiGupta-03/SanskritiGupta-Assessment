@@ -1,0 +1,365 @@
+{% extends "core/_base.html" %}
+{% block title %}Task 1 · Revenue & Booking Trends{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <div class="col-12">
+    <div class="card p-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-2">
+          <label class="form-label">Mode</label>
+          <select id="t1-mode" class="form-select">
+            <option value="api" selected>API</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+        <div class="col-md-2 api-only">
+          <label class="form-label">Resort</label>
+          <input id="t1-resort" class="form-control" placeholder="NYC">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Group By</label>
+          <select id="t1-grp" class="form-select">
+            <option value="day">Day</option>
+            <option value="week" selected>Week</option>
+            <option value="month">Month</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">From</label>
+          <input id="t1-dfrom" type="date" class="form-control">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">To</label>
+          <input id="t1-dto" type="date" class="form-control">
+        </div>
+
+        <div class="col-12 json-only">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label">Date Field</label>
+              <select id="t1-json-date" class="form-select"></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Revenue Field</label>
+              <select id="t1-json-revenue" class="form-select"></select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Bookings Field</label>
+              <select id="t1-json-bookings" class="form-select"></select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Paste JSON (array of objects)</label>
+              <textarea id="t1-json-area" class="form-control" rows="6" placeholder='[{"date":"2025-01-01","revenue":1234,"bookings":12}, ...]'></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <button id="t1-run" class="btn btn-primary">Run</button>
+          <button id="t1-demo" class="btn btn-outline-secondary ms-2">Demo (Last 90 days)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Total Revenue</div>
+      <div id="kpi-total-rev" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Total Bookings</div>
+      <div id="kpi-total-bk" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Avg Rev / Booking</div>
+      <div id="kpi-arb" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Period Growth</div>
+      <div id="kpi-growth" class="fs-4">—</div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-2">
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Day (rev)</div><div id="kNext1" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Week (sum)</div><div id="kNext7" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Month (sum)</div><div id="kNext30" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next 6 Months (sum)</div><div id="kNext180" class="kpi-value">—</div>
+  </div></div></div>
+</div>
+
+  <div class="col-12">
+    <div class="card p-3">
+      <h6 class="mb-3">Revenue, Bookings & Avg Rev/Booking</h6>
+      <canvas id="t1-main" height="110"></canvas>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card p-3">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h6 class="mb-0">Forecast (Overlay)</h6>
+        <div>
+          <input id="t1-horizon" type="number" class="form-control form-control-sm d-inline-block" style="width:120px" value="56" min="7" max="180">
+          <button id="t1-forecast" class="btn btn-sm btn-outline-primary ms-2">Forecast</button>
+        </div>
+      </div>
+      <canvas id="t1-forecast-chart" height="110"></canvas>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card p-3">
+      <h6 class="mb-3">Seasonality (Weekday / Month Averages)</h6>
+      <canvas id="t1-seasonality" height="110"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const modeSel = document.getElementById('t1-mode');
+  const apiOnly = document.querySelectorAll('.api-only');
+  const jsonOnly = document.querySelectorAll('.json-only');
+  const runBtn = document.getElementById('t1-run');
+  const demoBtn = document.getElementById('t1-demo');
+
+  const grpSel = document.getElementById('t1-grp');
+  const resortInp = document.getElementById('t1-resort');
+  const dfrom = document.getElementById('t1-dfrom');
+  const dto = document.getElementById('t1-dto');
+
+  const jsonArea = document.getElementById('t1-json-area');
+  const jsonDate = document.getElementById('t1-json-date');
+  const jsonRev  = document.getElementById('t1-json-revenue');
+  const jsonBk   = document.getElementById('t1-json-bookings');
+
+  const kTotalRev = document.getElementById('kpi-total-rev');
+  const kTotalBk  = document.getElementById('kpi-total-bk');
+  const kARB      = document.getElementById('kpi-arb');
+  const kGrowth   = document.getElementById('kpi-growth');
+
+  const kNext1   = document.getElementById('kNext1');
+  const kNext7   = document.getElementById('kNext7');
+  const kNext30  = document.getElementById('kNext30');
+  const kNext180 = document.getElementById('kNext180');
+
+  const forecastBtn = document.getElementById('t1-forecast');
+  const horizonInput= document.getElementById('t1-horizon');
+
+  let mainChart, forecastChart, seasChart;
+
+  function setModeUI(){
+    const isAPI = modeSel.value === 'api';
+    apiOnly.forEach(el => el.style.display = isAPI ? '' : 'none');
+    jsonOnly.forEach(el => el.style.display = isAPI ? 'none' : '');
+  }
+  modeSel.addEventListener('change', setModeUI);
+  setModeUI();
+
+  function fillDemoDates(){
+    const to = new Date(); const from = new Date(to.getTime() - 90*86400000);
+    dfrom.value = from.toISOString().slice(0,10);
+    dto.value   = to.toISOString().slice(0,10);
+  }
+  demoBtn.addEventListener('click', (e)=>{ e.preventDefault(); fillDemoDates(); });
+
+  function destroyIf(c){ if (c) try { c.destroy(); } catch {} }
+
+  const fmt = n => n==null ? '—' : Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+  const sum = arr => arr.reduce((a,b)=>a+(+b||0),0);
+  const average = arr => arr.length ? sum(arr)/arr.length : 0;
+  const ymd = d => (new Date(d)).toISOString().slice(0,10);
+
+  async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+
+  function qsCommon(){
+    const qs = new URLSearchParams({
+      grp: grpSel.value,
+      date_from: dfrom.value || '',
+      date_to: dto.value || ''
+    });
+    if (resortInp.value) qs.set('resort', resortInp.value);
+    return qs.toString();
+  }
+
+  async function fetchAPI(){
+    const qs = qsCommon();
+    const [revResp, brResp] = await Promise.all([
+      fetch(`/api/trends/revenue?${qs}`),
+      fetch(`/api/trends/booking_rate?${qs}`)
+    ]);
+    const rev = await revResp.json();   // {series:[{period,revenue,bookings,avg_rev_per_booking}]}
+    const br  = await brResp.json();    // {series:[...], weekday_avg:[], month_avg:[]}
+    return { rev, br };
+  }
+
+  function tryParseJSON(){
+    try {
+      const obj = JSON.parse(jsonArea.value || '[]');
+      return Array.isArray(obj) ? obj : [];
+    } catch { return []; }
+  }
+  function populateFieldSelectors(){
+    const arr = tryParseJSON();
+    const keys = arr[0] ? Object.keys(arr[0]) : [];
+    [jsonDate, jsonRev, jsonBk].forEach(sel => {
+      sel.innerHTML = '';
+      keys.forEach(k=> sel.appendChild(Object.assign(document.createElement('option'), {value:k, textContent:k})));
+    });
+  }
+  jsonArea.addEventListener('input', populateFieldSelectors);
+
+  function toSeriesFromJSON(){
+    const arr = tryParseJSON();
+    const dateKey = jsonDate.value, revKey = jsonRev.value, bkKey = jsonBk.value;
+
+    const mapped = arr.map(r => ({
+      period: String(r[dateKey]).slice(0,10),
+      revenue: Number(r[revKey] ?? 0),
+      bookings: Number(r[bkKey] ?? 0),
+      avg_rev_per_booking: (Number(r[revKey] ?? 0) / Math.max(1, Number(r[bkKey] ?? 0)))
+    })).filter(x => x.period);
+    mapped.sort((a,b)=> (a.period < b.period ? -1 : 1));
+    return { series: mapped };
+  }
+
+  function renderMain(series){
+    const labels   = series.map(x=>x.period);
+    const revenue  = series.map(x=>x.revenue);
+    const bookings = series.map(x=>x.bookings);
+    const arb      = series.map(x=>x.avg_rev_per_booking);
+
+    kTotalRev.textContent = '$ ' + fmt(sum(revenue));
+    kTotalBk.textContent  = fmt(sum(bookings));
+    kARB.textContent      = '$ ' + fmt(average(arb));
+    const g = (revenue.length>1 && revenue[0]!==0) ? ((revenue.at(-1)-revenue[0])/Math.abs(revenue[0]))*100 : 0;
+    kGrowth.textContent   = g.toFixed(1) + '%';
+
+    destroyIf(mainChart);
+    mainChart = new Chart(document.getElementById('t1-main'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Revenue', data: revenue, yAxisID: 'y' },
+          { label: 'Bookings', data: bookings, yAxisID: 'y1' },
+          { label: 'Avg Rev / Booking', data: arb, yAxisID: 'y' }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false }}}
+      }
+    });
+  }
+
+  function renderSeasonality(weekdayAvg, monthAvg){
+    destroyIf(seasChart);
+    seasChart = new Chart(document.getElementById('t1-seasonality'), {
+      type: 'bar',
+      data: {
+        labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun','|','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+        datasets: [
+          { label: 'Weekday Avg (bookings)', data: [...weekdayAvg, null, ...Array(12).fill(null)] },
+          { label: 'Month Avg (bookings)',   data: [...Array(8).fill(null), ...monthAvg] }
+        ]
+      },
+      options: { responsive: true }
+    });
+  }
+
+  // ---- Forecast helpers (KPIs + overlay chart) ----
+  const normForecast = (json) => {
+    const hist = (json.history || json.series || []).map(r => ({date: r.date || r.period, value: +((r.value ?? r.revenue)) || 0}));
+    const fc   = (json.forecast || json.yhat || []).map(r => ({date: r.date || r.period, value: +((r.value ?? r.forecast ?? r.yhat)) || 0}));
+    return {history: hist, forecast: fc};
+  };
+  const fillForecastKPIs = (fc) => {
+    const vals = fc.map(x=> +x.value || 0);
+    kNext1.textContent   = fmt(vals[0] ?? null);
+    kNext7.textContent   = fmt(sum(vals.slice(0,7)));
+    kNext30.textContent  = fmt(sum(vals.slice(0,30)));
+    kNext180.textContent = fmt(sum(vals.slice(0,180)));
+  };
+  async function fetchForecast(horizon=180){
+    const qs = new URLSearchParams({
+      months: '12',
+      horizon: String(Math.min(180, Math.max(7, horizon)))
+    });
+    if (resortInp.value) qs.set('resort', resortInp.value);
+    const data = await getJSON(`/api/forecast/revenue?${qs.toString()}`);
+    return normForecast(data);
+  }
+  function renderForecastChart(history, forecast){
+    const hL = history.map(x=>x.date), hV = history.map(x=>x.value);
+    const fL = forecast.map(x=>x.date), fV = forecast.map(x=>x.value);
+    destroyIf(forecastChart);
+    forecastChart = new Chart(document.getElementById('t1-forecast-chart'), {
+      type: 'line',
+      data: { labels: [...hL, ...fL],
+        datasets: [
+          { label: 'History',  data: [...hV, ...Array(fV.length).fill(null)] },
+          { label: 'Forecast', data: [...Array(hV.length).fill(null), ...fV] }
+        ]
+      },
+      options: { responsive: true }
+    });
+  }
+
+  // ---- Run flow ----
+  runBtn.addEventListener('click', async ()=>{
+    if (modeSel.value === 'api'){
+      const [{rev, br}, fc] = await Promise.all([fetchAPI(), fetchForecast(180)]);
+      renderMain(rev.series || []);
+      renderSeasonality(br.weekday_avg || [], br.month_avg || []);
+      fillForecastKPIs(fc.forecast || []);
+    } else {
+      populateFieldSelectors();
+      const payload = toSeriesFromJSON();
+      renderMain(payload.series);
+
+      // derive seasonality from pasted JSON
+      const byW = [0,0,0,0,0,0,0], wc=[0,0,0,0,0,0,0];
+      const byM = new Array(12).fill(0), mc=new Array(12).fill(0);
+      payload.series.forEach(r=>{
+        const d=new Date(r.period); const wd=(d.getDay()+6)%7; const mo=d.getMonth();
+        byW[wd]+=r.bookings; wc[wd]+=1; byM[mo]+=r.bookings; mc[mo]+=1;
+      });
+      renderSeasonality(byW.map((v,i)=>wc[i]?v/wc[i]:0), byM.map((v,i)=>mc[i]?v/mc[i]:0));
+
+      // No server forecast in JSON mode -> clear forecast KPIs
+      [kNext1,kNext7,kNext30,kNext180].forEach(el=> el.textContent='—');
+    }
+  });
+
+  forecastBtn.addEventListener('click', async ()=>{
+    if (modeSel.value !== 'api') return alert('Forecast uses API mode.');
+    const h = Number(horizonInput.value || 56);
+    const fc = await fetchForecast(h);
+    renderForecastChart(fc.history || [], fc.forecast || []);
+  });
+
+  fillDemoDates();
+})();
+</script>
+{% endblock %}

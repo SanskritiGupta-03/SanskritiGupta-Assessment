@@ -1,0 +1,20 @@
+{% extends "core/_base.html" %}
+{% block title %}Home · Ops Analytics{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12">
+    <div class="card p-4">
+      <h3 class="mb-3">Welcome</h3>
+      <p class="text-secondary">Use the navbar to explore trends. These pages call your backend APIs and visualize results with Chart.js.</p>
+      <ul class="mb-0">
+        <li>Revenue trends (/api/trends/revenue)</li>
+        <li>Booking rate (/api/trends/booking_rate)</li>
+        <li>Occupancy (/api/trends/occupancy)</li>
+        <li>Cancellations (/api/trends/cancellations)</li>
+        <li>Lead time (/api/trends/lead_time)</li>
+        <li>Forecast (/api/forecast/revenue)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
