@@ -36,6 +36,11 @@
         </div>
 
         <div class="col-12 json-only">
+          <div class="col-md-4 json-only">
+            <label class="form-label">Load from Excel (.xlsx)</label>
+            <input id="t1-file" type="file" class="form-control" accept=".xlsx,.xls,.xlsm,.csv">
+            <div class="form-text">Upload an Excel with columns like: date, revenue, bookings.</div>
+          </div>
           <div class="row g-2">
             <div class="col-md-4">
               <label class="form-label">Date Field</label>
@@ -134,6 +139,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
   const modeSel = document.getElementById('t1-mode');
@@ -146,6 +152,8 @@
   const resortInp = document.getElementById('t1-resort');
   const dfrom = document.getElementById('t1-dfrom');
   const dto = document.getElementById('t1-dto');
+
+  const t1FileInput = document.getElementById('t1-file');
 
   const jsonArea = document.getElementById('t1-json-area');
   const jsonDate = document.getElementById('t1-json-date');
@@ -166,6 +174,59 @@
   const horizonInput= document.getElementById('t1-horizon');
 
   let mainChart, forecastChart, seasChart;
+
+  function autoSelect(selectEl, keys, candidates){
+    const norm = s => String(s).toLowerCase().replace(/\s+/g,'');
+    const keySet = keys.map(norm);
+    let pick = null;
+    for (const cand of candidates){
+      const i = keySet.indexOf(norm(cand));
+      if (i >= 0){ pick = keys[i]; break; }
+    }
+    selectEl.value = pick || (keys[0] || '');
+  }
+
+  async function handleExcelFile(file){
+    const buf = await file.arrayBuffer();
+
+    const wb = XLSX.read(buf, {
+      type: 'array',
+      cellDates: true,
+      raw: false,
+      dateNF: 'yyyy-mm-dd'
+    });
+
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) throw new Error('No sheets found in workbook');
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('Sheet has no data rows (check that the first row contains headers).');
+    }
+
+    jsonArea.value = JSON.stringify(rows, null, 2);
+
+    populateFieldSelectors();
+    const keys = Object.keys(rows[0] || {});
+    autoSelect(jsonDate, keys, ['date','business_date','day','period']);
+    autoSelect(jsonRev,  keys, ['revenue','revenue_amt','net_amount','gross_amount','amount']);
+    autoSelect(jsonBk,   keys, ['bookings','num_bookings','count','reservation_count']);
+
+    modeSel.value = 'json';
+    const evt = new Event('change'); modeSel.dispatchEvent(evt);
+  }
+
+  t1FileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await handleExcelFile(file);
+    } catch (err) {
+      console.error(err);
+      alert('Could not read Excel file. Make sure it is a valid .xlsx with a header row. See console for details.');
+    }
+  });
 
   function setModeUI(){
     const isAPI = modeSel.value === 'api';
@@ -207,8 +268,8 @@
       fetch(`/api/trends/revenue?${qs}`),
       fetch(`/api/trends/booking_rate?${qs}`)
     ]);
-    const rev = await revResp.json();   // {series:[{period,revenue,bookings,avg_rev_per_booking}]}
-    const br  = await brResp.json();    // {series:[...], weekday_avg:[], month_avg:[]}
+    const rev = await revResp.json();   
+    const br  = await brResp.json();    
     return { rev, br };
   }
 
@@ -288,7 +349,6 @@
     });
   }
 
-  // ---- Forecast helpers (KPIs + overlay chart) ----
   const normForecast = (json) => {
     const hist = (json.history || json.series || []).map(r => ({date: r.date || r.period, value: +((r.value ?? r.revenue)) || 0}));
     const fc   = (json.forecast || json.yhat || []).map(r => ({date: r.date || r.period, value: +((r.value ?? r.forecast ?? r.yhat)) || 0}));
@@ -326,7 +386,6 @@
     });
   }
 
-  // ---- Run flow ----
   runBtn.addEventListener('click', async ()=>{
     if (modeSel.value === 'api'){
       const [{rev, br}, fc] = await Promise.all([fetchAPI(), fetchForecast(180)]);
@@ -338,7 +397,6 @@
       const payload = toSeriesFromJSON();
       renderMain(payload.series);
 
-      // derive seasonality from pasted JSON
       const byW = [0,0,0,0,0,0,0], wc=[0,0,0,0,0,0,0];
       const byM = new Array(12).fill(0), mc=new Array(12).fill(0);
       payload.series.forEach(r=>{
@@ -347,7 +405,6 @@
       });
       renderSeasonality(byW.map((v,i)=>wc[i]?v/wc[i]:0), byM.map((v,i)=>mc[i]?v/mc[i]:0));
 
-      // No server forecast in JSON mode -> clear forecast KPIs
       [kNext1,kNext7,kNext30,kNext180].forEach(el=> el.textContent='—');
     }
   });
