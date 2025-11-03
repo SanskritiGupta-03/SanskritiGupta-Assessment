@@ -1,0 +1,437 @@
+{% extends "core/_base.html" %}
+{% block title %}Task 2 · Service & Operational Trends{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <div class="col-12">
+    <div class="card p-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-2">
+          <label class="form-label">Mode</label>
+          <select id="t2-mode" class="form-select">
+            <option value="api" selected>API</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+        <div class="col-md-2 api-only">
+          <label class="form-label">Location</label>
+          <input id="t2-location" class="form-control" placeholder="LOC1">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Group By</label>
+          <select id="t2-grp" class="form-select">
+            <option value="day">Day</option>
+            <option value="week" selected>Week</option>
+            <option value="month">Month</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">From</label>
+          <input id="t2-dfrom" type="date" class="form-control">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">To</label>
+          <input id="t2-dto" type="date" class="form-control">
+        </div>
+
+        <div class="col-12 json-only">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="form-label">Date Field</label>
+              <select id="t2-json-date" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Capacity Field</label>
+              <select id="t2-json-cap" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Occupied Field</label>
+              <select id="t2-json-occ" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Ops Cost Field (optional)</label>
+              <select id="t2-json-cost" class="form-select"></select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Paste JSON (array of objects)</label>
+              <textarea id="t2-json-area" class="form-control" rows="6"
+                placeholder='[{"date":"2025-01-01","capacity":100,"occupied":85,"ops_cost":4200}, ...]'></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Staff Ratio (guests per staff)</label>
+          <input id="t2-staff-ratio" type="number" class="form-control" min="1" value="10">
+        </div>
+
+        <div class="col-12">
+          <button id="t2-run" class="btn btn-primary">Run</button>
+          <button id="t2-demo" class="btn btn-outline-secondary ms-2">Demo (Last 60 days)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Avg Occupancy Rate</div>
+      <div id="t2-kpi-occ" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="row g-3 mt-2">
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Day (occupied)</div><div id="t2Next1" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Week (sum)</div><div id="t2Next7" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next Month (sum)</div><div id="t2Next30" class="kpi-value">—</div>
+  </div></div></div>
+  <div class="col-md-3"><div class="card card-kpi"><div class="card-body">
+    <div class="kpi-title">Next 6 Months (sum)</div><div id="t2Next180" class="kpi-value">—</div>
+  </div></div></div>
+</div>
+
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Peak Occupancy</div>
+      <div id="t2-kpi-peak" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Avg Ops Cost / Occupied</div>
+      <div id="t2-kpi-cost-per" class="fs-4">—</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3 text-center">
+      <div class="text-secondary small">Suggested Staff (Next day)</div>
+      <div id="t2-kpi-staff" class="fs-4">—</div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card p-3">
+      <h6 class="mb-3">Capacity vs Occupancy & Rate</h6>
+      <canvas id="t2-main" height="110"></canvas>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card p-3">
+      <h6 class="mb-3">Ops Cost vs Utilization</h6>
+      <canvas id="t2-cost" height="110"></canvas>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const modeSel = document.getElementById('t2-mode');
+  const apiOnly = document.querySelectorAll('.api-only');
+  const jsonOnly = document.querySelectorAll('.json-only');
+
+  const grpSel = document.getElementById('t2-grp');
+  const locInp = document.getElementById('t2-location');
+  const dfrom  = document.getElementById('t2-dfrom');
+  const dto    = document.getElementById('t2-dto');
+  const runBtn = document.getElementById('t2-run');
+  const demoBtn= document.getElementById('t2-demo');
+  const staffRatio = document.getElementById('t2-staff-ratio');
+
+  const jsonArea = document.getElementById('t2-json-area');
+  const fDate = document.getElementById('t2-json-date');
+  const fCap  = document.getElementById('t2-json-cap');
+  const fOcc  = document.getElementById('t2-json-occ');
+  const fCost = document.getElementById('t2-json-cost');
+
+  const kOcc = document.getElementById('t2-kpi-occ');
+  const kPeak= document.getElementById('t2-kpi-peak');
+  const kCost= document.getElementById('t2-kpi-cost-per');
+  const kStaff = document.getElementById('t2-kpi-staff');
+
+  let mainChart, costChart;
+  function destroyIf(c){ if (c) try{c.destroy()}catch{} }
+  function fmt(n){ return (n||0).toLocaleString(); }
+  function avg(arr){ return arr.length ? arr.reduce((a,b)=>a+(+b||0),0) / arr.length : 0; }
+
+  function setModeUI(){
+    const isAPI = modeSel.value === 'api';
+    apiOnly.forEach(el => el.style.display = isAPI ? '' : 'none');
+    jsonOnly.forEach(el => el.style.display = isAPI ? 'none' : '');
+  }
+  modeSel.addEventListener('change', setModeUI);
+  setModeUI();
+
+  function fillDemoDates(){
+    const to = new Date(); const from = new Date(to.getTime() - 60*86400000);
+    dfrom.value = from.toISOString().slice(0,10);
+    dto.value   = to.toISOString().slice(0,10);
+  }
+  demoBtn.addEventListener('click', (e)=>{ e.preventDefault(); fillDemoDates(); });
+
+  async function fetchAPI(){
+    const qs = new URLSearchParams({
+      grp: grpSel.value, location_id: locInp.value || '',
+      date_from: dfrom.value || '', date_to: dto.value || ''
+    }).toString();
+    const res = await fetch(`/api/trends/occupancy?${qs}`);
+    const json = await res.json(); 
+    return json;
+  }
+
+  function tryParseJSON(){
+    try { const o = JSON.parse(jsonArea.value || '[]'); return Array.isArray(o)?o:[]; } catch { return []; }
+  }
+  function populateFields(){
+    const arr = tryParseJSON();
+    const keys = arr[0] ? Object.keys(arr[0]) : [];
+    [fDate,fCap,fOcc,fCost].forEach(sel=>{
+      sel.innerHTML = '';
+      keys.forEach(k => {
+        const opt = document.createElement('option'); opt.value=k; opt.textContent=k; sel.appendChild(opt);
+      });
+    });
+  }
+  jsonArea.addEventListener('input', populateFields);
+
+  function jsonSeries(){
+    const arr = tryParseJSON();
+    const dk=fDate.value, ck=fCap.value, ok=fOcc.value, costk=fCost.value;
+        const out = arr.map(r => {
+      const d = String(r[dk]).slice(0,10);
+      const cap = Number(r[ck] ?? 0);
+      const occ = Number(r[ok] ?? 0);
+      const cost = costk ? Number(r[costk] ?? 0) : null;
+      return { period: d, capacity: cap, occupied: occ, ops_cost: cost,
+               occupancy_rate: cap > 0 ? occ / cap : 0 };
+    }).filter(x => x.period);
+    out.sort((a,b)=> (a.period < b.period ? -1 : 1));
+    return { series: out };
+  }
+
+  function movingAvg(arr, win=7){
+    const out = [];
+    for (let i=0;i<arr.length;i++){
+      const s = Math.max(0, i - win + 1);
+      const slice = arr.slice(s, i+1);
+      const v = slice.reduce((a,b)=>a+(+b||0),0) / slice.length;
+      out.push(v);
+    }
+    return out;
+  }
+
+  function renderAll(series){
+    const labels = series.map(x=>x.period);
+    const cap    = series.map(x=>x.capacity);
+    const occ    = series.map(x=>x.occupied);
+    const rate   = series.map(x=>x.occupancy_rate);
+    const cost   = series.map(x=> x.ops_cost == null ? null : x.ops_cost);
+
+    kOcc.textContent  = (avg(rate)*100).toFixed(1) + '%';
+    kPeak.textContent = fmt(Math.max(...occ));
+    const costPerOcc = cost.some(v => v != null)
+      ? ( cost.reduce((a,b)=> a + (+b||0), 0) / Math.max(1, occ.reduce((a,b)=>a+(+b||0),0)) )
+      : 0;
+    kCost.textContent = cost.some(v => v != null) ? ('$ ' + costPerOcc.toFixed(2)) : '—';
+
+    const occMA = movingAvg(occ, 7);
+    const nextOcc = occMA[occMA.length-1] || 0;
+    const ratio = Math.max(1, Number(staffRatio.value || 10));
+    kStaff.textContent = Math.ceil(nextOcc / ratio);
+
+    destroyIf(mainChart);
+    mainChart = new Chart(document.getElementById('t2-main'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Capacity', data: cap, yAxisID: 'y' },
+          { label: 'Occupied', data: occ, yAxisID: 'y' },
+          { label: 'Occupancy Rate', data: rate, yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          y: { position: 'left' },
+          y1: { position: 'right', min: 0, max: 1, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+
+    destroyIf(costChart);
+    const haveCost = cost.some(v => v != null);
+    costChart = new Chart(document.getElementById('t2-cost'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Ops Cost', data: haveCost ? cost : Array(labels.length).fill(null), yAxisID: 'y' },
+          { label: 'Occupancy Rate', data: rate, type: 'line', yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { position: 'left' },
+          y1: { position: 'right', min: 0, max: 1, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+
+  runBtn.addEventListener('click', async ()=>{
+    if (modeSel.value === 'api'){
+      const json = await fetchAPI();
+      renderAll(json.series || []);
+    } else {
+      populateFields();
+      const json = jsonSeries();
+      renderAll(json.series || []);
+    }
+  });
+
+  fillDemoDates();
+})();
+</script>
+
+<script>
+(() => {
+  const runBtn   = document.getElementById('t2Run');          // your Task-2 run button id
+  const locEl    = document.getElementById('t2Location');
+  const grpEl    = document.getElementById('t2Grp');
+  const fromEl   = document.getElementById('t2From');
+  const toEl     = document.getElementById('t2To');
+  const staffEl  = document.getElementById('t2StaffRatio');
+
+  const kOcc   = document.getElementById('kOccRate');
+  const kPeak  = document.getElementById('kPeakOcc');
+  const kCost  = document.getElementById('kCostPerOcc');   // may be '—' if you don’t supply cost
+  const kStaff = document.getElementById('kStaffNext');    // next day suggestion already on page
+
+  const n1 = document.getElementById('t2Next1');
+  const n7 = document.getElementById('t2Next7');
+  const n30 = document.getElementById('t2Next30');
+  const n180 = document.getElementById('t2Next180');
+
+  let occChart;
+
+  const fmt = n => n == null ? '—' : Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+  const sum = arr => arr.reduce((a,b)=>a+(+b||0),0);
+  const avg = arr => arr.length ? sum(arr)/arr.length : 0;
+  const ymd = d => (new Date(d)).toISOString().slice(0,10);
+
+  async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+
+  function trendsURL(){
+    const loc = encodeURIComponent(locEl.value || '');
+    const grp = encodeURIComponent(grpEl.value || 'week');
+    const d1  = fromEl.value ? `&date_from=${fromEl.value}` : '';
+    const d2  = toEl.value   ? `&date_to=${toEl.value}`     : '';
+    const ls  = loc ? `location_id=${loc}&` : '';
+    return `/api/trends/occupancy?${ls}grp=${grp}${d1}${d2}`;
+  }
+
+  // Simple baseline forecast: 7-day moving average of occupied, extended forward
+  function baselineForecast(series, horizonDays=180){
+    const occ = series.map(r=> +r.occupied || 0);
+    const labels = series.map(r=> ymd(r.period || r.date));
+    const lastDate = new Date(labels[labels.length-1] || Date.now());
+
+    const ma = (k, i) => {
+      const s = Math.max(0, i-k+1);
+      const slice = occ.slice(s, i+1);
+      return slice.length ? slice.reduce((a,b)=>a+b,0)/slice.length : 0;
+    };
+
+    // compute last moving average and extend
+    let lastMA = ma(7, occ.length-1) || (occ[occ.length-1] || 0);
+    const forecast = [];
+    for (let i=1;i<=horizonDays;i++){
+      const d = new Date(lastDate); d.setDate(d.getDate()+i);
+      forecast.push({ date: ymd(d), value: lastMA });
+      // optional: slowly revert to long-term mean
+      lastMA = 0.7*lastMA + 0.3*(avg(occ) || lastMA);
+    }
+    return forecast;
+  }
+
+  function renderAll(series){
+    const labels = series.map(r => r.period);
+    const cap = series.map(r => +r.capacity || 0);
+    const occ = series.map(r => +r.occupied || 0);
+    const rate = series.map((_,i) => cap[i] > 0 ? (occ[i]/cap[i]) : 0);
+
+    // KPIs
+    if (kOcc)   kOcc.textContent  = (avg(rate)*100).toFixed(1)+'%';
+    if (kPeak)  kPeak.textContent = fmt(Math.max(...occ));
+    if (kCost)  kCost.textContent = '—'; // unless you add ops_cost series
+    if (kStaff) {
+      const ratio = Math.max(1, +staffEl.value || 10);
+      kStaff.textContent = Math.ceil((occ[occ.length-1] || 0) / ratio);
+    }
+
+    // Forecast (client-side baseline)
+    const fc = baselineForecast(series, 180);
+
+    // Forecast KPIs
+    n1.textContent   = fmt(fc[0]?.value ?? null);
+    n7.textContent   = fmt(sum(fc.slice(0,7).map(x=>x.value)));
+    n30.textContent  = fmt(sum(fc.slice(0,30).map(x=>x.value)));
+    n180.textContent = fmt(sum(fc.slice(0,180).map(x=>x.value)));
+
+    // Merge for chart
+    const allDates = [
+      ...labels,
+      ...fc.map(x=>x.date)
+    ];
+    const uniq = Array.from(new Set(allDates)).sort();
+
+    const aSeries = uniq.map(d => {
+      const idx = labels.indexOf(d);
+      return idx >= 0 ? occ[idx] : null;
+    });
+    const fSeries = uniq.map(d => {
+      return labels.includes(d) ? null : (fc.find(x=>x.date===d)?.value ?? null);
+    });
+
+    if (occChart) occChart.destroy();
+    occChart = new Chart(document.getElementById('t2-main'), {
+      type: 'line',
+      data: {
+        labels: uniq,
+        datasets: [
+          { label: 'Occupied (actual)', data: aSeries, spanGaps: true },
+          { label: 'Occupied (forecast, baseline)', data: fSeries, spanGaps: true }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        elements: { line: { borderDash: [6,6] } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  async function run(){
+    const json = await getJSON(trendsURL());
+    renderAll(json.series || []);
+  }
+
+  runBtn?.addEventListener('click', ()=> run());
+  // run();
+})();
+</script>
+
+{% endblock %}

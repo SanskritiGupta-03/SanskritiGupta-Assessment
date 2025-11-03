@@ -1,4 +1,5 @@
 import os
+from django.shortcuts import render
 from collections import defaultdict
 from datetime import datetime, date
 
@@ -423,3 +424,12 @@ def forecast_revenue(request):
     d1, d2 = ensure_range(None, None, default_days=days)
     res = arima_forecast_series(resort, d1, d2, horizon=horizon)
     return JsonResponse(res)
+
+def ui_home(request):
+    return render(request, "core/home.html")
+
+def ui_task1_revenue_booking(request):
+    return render(request, "core/task1_revenue_booking.html")
+
+def ui_task2_service_ops(request):
+    return render(request, "core/task2_service_ops.html")

@@ -77,5 +77,5 @@ def export_excel(path: str, sheets: Dict[str, List[dict]], orders: Dict[str, Lis
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         for name, data in sheets.items():
             df = to_dataframe(data, (orders or {}).get(name))
-            df.to_excel(writer, index=False, sheet_name=name[:31])  # Excel sheet name limit
+            df.to_excel(writer, index=False, sheet_name=name[:31])
     return path
